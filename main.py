@@ -50,7 +50,8 @@ def subcategories():
         WHERE create_date > '2023-10-16 13:00'::timestamp - interval {}
         GROUP BY label
     )
-    SELECT log.label, log.count, 1 - rank.significance/cast(log.count as decimal) as significance, log.category, log.subcategory, log.create_date as last, log.log
+    SELECT log.label, log.count, 1 - rank.significance/cast(log.count as decimal) as significance, log.category, 
+    log.subcategory, log.create_date as last, log.log
     FROM logs log JOIN rank ON rank.label = log.label WHERE log.rn = 1 ORDER BY log.create_date DESC;
     """).format(interval, interval))
     columns = list(cur.description)
@@ -210,6 +211,14 @@ def group_chart():
     id = int(request.args.get('id'))
     interval = sql.Literal(request.args.get('hours') + " hour")
     cur.execute(sql.SQL("""
+    SELECT date, 0 as count
+    FROM generate_series
+        ( '2023-10-16 13:00'::timestamp - interval {}
+        , '2023-10-16 13:00'::timestamp
+        , '30 minutes'::interval) date;
+    """).format(interval))
+    dates = cur.fetchall()
+    cur.execute(sql.SQL("""
     SELECT date_bin('30 minutes', create_date, TIMESTAMP '2001-01-01') as date, COUNT(*)
     FROM unique_errors u
     JOIN logs l ON l.uuid = ANY(u.ids)
@@ -218,9 +227,11 @@ def group_chart():
     GROUP BY 1;
     """).format(interval), (id,))
     x, y = [], []
-    for row in cur.fetchall():
+    for row in dates:
         x.append(row[0])
         y.append(row[1])
+    for row in sorted(cur.fetchall()):
+        y[x.index(row[0])] = row[1]
     cur.close()
     conn.close()
     return {"x": x, "y": y}
